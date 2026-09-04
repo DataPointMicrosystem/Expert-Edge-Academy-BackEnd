@@ -1,0 +1,58 @@
+{
+  "name": "expert-edge-academy-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "App.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DataPointMicrosystem/Expert-Edge-Academy-BackEnd.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/DataPointMicrosystem/Expert-Edge-Academy-BackEnd/issues"
+  },
+  "homepage": "https://github.com/DataPointMicrosystem/Expert-Edge-Academy-BackEnd#readme",
+  "dependencies": {
+    "axios": "^1.20.0",
+    "bcrypt": "^6.0.0",
+    "cloudinary": "^2.11.0",
+    "cookie": "^2.0.1",
+    "cookie-parser": "^1.4.7",
+    "cookie-session": "^2.1.1",
+    "cors": "^2.8.6",
+    "cron-job": "^1.0.3",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^17.4.2",
+    "ejs": "^6.0.1",
+    "express": "^5.2.1",
+    "express-fileupload": "^1.5.2",
+    "express-validator": "^7.3.2",
+    "formidable": "^3.5.4",
+    "gravatar": "^1.8.2",
+    "http-errors": "^2.0.1",
+    "joi": "^18.2.5",
+    "jsonwebtoken": "^9.0.3",
+    "jwt-decode": "^4.0.0",
+    "luxon": "^3.7.2",
+    "moment": "^2.30.1",
+    "mongoose": "^9.9.4",
+    "mongoose-paginate-v2": "^1.9.5",
+    "morgan": "^1.12.0",
+    "multer": "^2.3.0",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.0.6",
+    "otp-generator": "^4.0.1",
+    "session": "^0.1.0",
+    "socket.io": "^4.8.3",
+    "stripe": "^22.6.0",
+    "uuid": "^14.0.2",
+    "validator": "^13.15.35"
+  }
+}
