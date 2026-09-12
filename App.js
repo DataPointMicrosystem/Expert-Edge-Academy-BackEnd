@@ -26,12 +26,7 @@ const mediaRouter = require("./routes/mediaRouter");
 const app = express();
 app.disable("x-powered-by");
 app.use(helmet());
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:8443",
-    credentials: true,
-  }),
-);
+app.use(cors({ origin: "*" }));
 app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "1mb" }));
 app.use(
