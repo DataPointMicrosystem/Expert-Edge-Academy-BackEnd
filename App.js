@@ -28,7 +28,7 @@ app.disable("x-powered-by");
 app.use(helmet());
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
+    origin: process.env.FRONTEND_URL || "http://localhost:8443",
     credentials: true,
   }),
 );
