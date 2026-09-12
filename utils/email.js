@@ -1,5 +1,17 @@
-exports.resetPasswordTemplate = (data)=> {
-    return `
+exports.emailVerificationTemplate = (data) => `
+<!DOCTYPE html>
+<html lang="en">
+<body style="font-family: Arial, sans-serif; color: #1a1a1a;">
+    <h2>Verify your ExpertEdge Academy account</h2>
+    <p>Hello ${data.name}, use this code to verify your email address:</p>
+    <p style="font-size: 28px; font-weight: bold; letter-spacing: 6px;">${data.otp}</p>
+    <p>This code expires in 10 minutes.</p>
+</body>
+</html>
+`;
+
+exports.resetPasswordTemplate = (data) => {
+  return `
     <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -70,11 +82,11 @@ exports.resetPasswordTemplate = (data)=> {
 </body>
 </html>
 
-    `
-}
+    `;
+};
 
-exports.resetPasswordSuccessfulTemplate = (name)=> {
-    return `
+exports.resetPasswordSuccessfulTemplate = (name) => {
+  return `
         <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -144,6 +156,5 @@ exports.resetPasswordSuccessfulTemplate = (name)=> {
 </body>
 </html>
 
-    `
-}
-
+    `;
+};

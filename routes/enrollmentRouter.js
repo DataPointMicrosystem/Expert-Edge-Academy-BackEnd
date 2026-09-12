@@ -1,0 +1,11 @@
+const router = require("express").Router();
+const controller = require("../controller/enrollmentController");
+const asyncHandler = require("../utils/asyncHandler");
+const { Authentication, requireRoles } = require("../middleware/auth");
+router.use(Authentication, requireRoles("student"));
+router.get("/my-courses", asyncHandler(controller.myEnrollments));
+router.post("/:courseId", asyncHandler(controller.freeEnroll));
+router.get("/:enrollmentId", asyncHandler(controller.getEnrollment));
+router.put("/:enrollmentId/progress", asyncHandler(controller.updateProgress));
+router.get("/access/:courseId", asyncHandler(controller.checkAccess));
+module.exports = router;

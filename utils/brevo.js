@@ -7,12 +7,20 @@ brevoClient.setApiKey(
 );
 
 const brevo = async (userEmail, userName, html) => {
+  if (
+    !process.env.brevo_api_key ||
+    process.env.brevo_api_key.startsWith("your_")
+  ) {
+    console.warn("Brevo is not configured; email notification skipped");
+    return;
+  }
+
   const sendSmtpEmail = new BrevoClient.SendSmtpEmail();
   const data = {
     htmlContent: `<html><head></head><body><p>Hello ${userName} ,</p>Welcome to backend!.</p></body></html>`,
     sender: {
-      email: "iyanu9491@gmail.com",
-      name: "Michael from Expert-Edge-Academy",
+      email: process.env.BREVO_SENDER_EMAIL || "noreply@expertedgeacademy.com",
+      name: process.env.BREVO_SENDER_NAME || "ExpertEdge Academy",
     },
     subject: "Hello from Expert-Edge-Academy",
   };
