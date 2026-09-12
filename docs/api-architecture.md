@@ -77,6 +77,18 @@ Authentication middleware only validates the token and resolves the user identit
 
 ## API MODULES & ENDPOINTS
 
+## REFERRALS
+
+```text
+GET  /api/referrals/me       - Authenticated referral summary
+GET  /api/referrals/code     - Generate or retrieve referral code
+POST /api/referrals/track    - Track pending referral attribution
+GET  /api/referrals/history  - Authenticated reward history
+POST /api/referrals/withdraw - Returns 501 until payouts are implemented
+```
+
+Referral rewards are created only after successful server-side payment verification. The unique payment index on referral rewards prevents duplicate rewards from repeated verification or webhook delivery.
+
 ---
 
 ## MODULE 1: AUTHENTICATION

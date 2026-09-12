@@ -34,6 +34,20 @@ exports.Authentication = async (req, res, next) => {
   }
 };
 
+exports.optionalAuthentication = async (req, res, next) => {
+  const authorization = req.headers.authorization || "";
+  const [scheme, token] = authorization.split(" ");
+  if (scheme !== "Bearer" || !token) return next();
+  try {
+    const claims = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(claims.userId).select("-password");
+    if (user && user.isActive && !user.isSuspended) req.user = user;
+  } catch (error) {
+    // Tracking remains public; invalid optional credentials are ignored.
+  }
+  return next();
+};
+
 exports.requireRoles =
   (...roles) =>
   (req, res, next) => {

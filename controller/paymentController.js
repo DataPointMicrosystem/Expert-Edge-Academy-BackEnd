@@ -5,6 +5,7 @@ const Enrollment = require("../model/enrollment");
 const Lesson = require("../model/lesson");
 const paymentService = require("../services/paymentService");
 const { notify } = require("../services/notificationService");
+const referralService = require("../services/referralService");
 const { success, failure } = require("../utils/apiResponse");
 
 const feePercentage = () => Number(process.env.PLATFORM_FEE_PERCENTAGE || 15);
@@ -69,6 +70,12 @@ exports.initialize = async (req, res) => {
     );
   if (await Enrollment.exists({ student: req.user._id, course: course._id }))
     return failure(res, 409, "You are already enrolled", "ALREADY_ENROLLED");
+  if (req.body.referralCode) {
+    await referralService.validateForUser({
+      referralCode: req.body.referralCode,
+      referredUserId: req.user._id,
+    });
+  }
   const amount = course.price;
   const percentage = feePercentage();
   const platformFee = Number(((amount * percentage) / 100).toFixed(2));
@@ -84,6 +91,14 @@ exports.initialize = async (req, res) => {
     instructorEarnings: Number((amount - platformFee).toFixed(2)),
   });
   try {
+    await referralService.attachToPayment({
+      referralCode: req.body.referralCode,
+      courseId: course._id,
+      referredUserId: req.user._id,
+      sessionId: req.body.referralSessionId || req.body.sessionId,
+      paymentId: payment._id,
+      paymentReference: reference,
+    });
     const transaction = await paymentService.initialize({
       email: req.user.email,
       amount,
@@ -159,6 +174,7 @@ exports.verify = async (req, res) => {
   payment.completedAt = new Date();
   await payment.save();
   const enrollment = await createEnrollment(payment, payment.course);
+  await referralService.awardForPayment(payment);
   await notify({
     user: payment.student,
     type: "payment_success",
@@ -220,6 +236,7 @@ exports.webhook = async (req, res) => {
     payment.completedAt = new Date();
     await payment.save();
     await createEnrollment(payment, payment.course);
+    await referralService.awardForPayment(payment);
   } else if (
     payment &&
     event.event === "charge.failed" &&

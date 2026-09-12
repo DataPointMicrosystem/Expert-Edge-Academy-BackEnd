@@ -178,5 +178,34 @@ module.exports = {
         },
       },
     },
+    "/referrals/me": {
+      get: {
+        summary: "Get the authenticated user's referral summary",
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: "Referral summary" }, 401: { description: "Authentication required" } },
+      },
+    },
+    "/referrals/code": {
+      get: {
+        summary: "Generate or retrieve the authenticated user's referral code",
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: "Referral code" }, 401: { description: "Authentication required" } },
+      },
+    },
+    "/referrals/track": {
+      post: {
+        summary: "Track a pending referral attribution",
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["referralCode", "courseId"], properties: { referralCode: { type: "string" }, courseId: { type: "string" }, sessionId: { type: "string", description: "Stable anonymous browser/session identifier" } } } } } },
+        responses: { 201: { description: "Referral tracked" }, 400: { description: "Invalid referral or self-referral" }, 404: { description: "Referral code or course not found" } },
+      },
+    },
+    "/referrals/history": {
+      get: {
+        summary: "Get authenticated referral reward history",
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "page", in: "query", schema: { type: "integer", minimum: 1 } }, { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } }],
+        responses: { 200: { description: "Referral history" }, 401: { description: "Authentication required" } },
+      },
+    },
   },
 };

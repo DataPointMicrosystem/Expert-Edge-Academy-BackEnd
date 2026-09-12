@@ -573,6 +573,46 @@ PUT /notifications/:notificationId
 PUT /notifications/read-all
 ```
 
+## Referrals
+
+Authenticated referral summary:
+
+```http
+GET /referrals/me
+```
+
+Generate or retrieve the current user's referral code:
+
+```http
+GET /referrals/code
+```
+
+Track a referral click or attribution. This endpoint may be called anonymously. Use a stable anonymous `sessionId` when the visitor is not logged in:
+
+```http
+POST /referrals/track
+```
+
+Request:
+
+```json
+{
+  "referralCode": "ABC1234567",
+  "courseId": "COURSE_ID",
+  "sessionId": "browser-session-id"
+}
+```
+
+Tracking does not award money. It stays pending until the referred user completes a successful backend-verified Kora payment.
+
+Referral history:
+
+```http
+GET /referrals/history?page=1&limit=20
+```
+
+Referral withdrawals are not enabled. Treat the balance as read-only until a payout system is added.
+
 ## Quizzes
 
 ### Get quiz
@@ -765,11 +805,12 @@ Implement and verify these flows in order:
 13. Connect student enrollments and progress.
 14. Connect wishlist.
 15. Connect reviews and ratings.
-16. Connect certificates and notifications.
-17. Connect instructor course management and approval status.
-18. Connect admin-only screens only where they exist in the frontend.
-19. Add loading, empty, unauthorized, forbidden, payment-pending, payment-failed, and server-error states.
-20. Test desktop and mobile behavior after integration.
+17. Connect referrals: code, tracking, summary, history, and payment attribution.
+18. Connect certificates and notifications.
+19. Connect instructor course management and approval status.
+20. Connect admin-only screens only where they exist in the frontend.
+21. Add loading, empty, unauthorized, forbidden, payment-pending, payment-failed, and server-error states.
+22. Test desktop and mobile behavior after integration.
 
 ## Important Limitations
 

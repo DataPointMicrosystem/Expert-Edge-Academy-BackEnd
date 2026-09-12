@@ -22,6 +22,7 @@ const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./docs/openapi");
 const databaseGuard = require("./middleware/database");
 const mediaRouter = require("./routes/mediaRouter");
+const referralRouter = require("./routes/referralRouter");
 
 const app = express();
 app.disable("x-powered-by");
@@ -77,6 +78,7 @@ app.use("/api/quizzes", databaseGuard, quizRouter);
 app.use("/api/notifications", databaseGuard, notificationRouter);
 app.use("/api/admin", databaseGuard, adminRouter);
 app.use("/api/media", databaseGuard, mediaRouter);
+app.use("/api/referrals", databaseGuard, referralRouter);
 
 app.use((req, res) => {
   res.status(404).json({
