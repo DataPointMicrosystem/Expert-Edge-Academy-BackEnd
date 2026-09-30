@@ -14,7 +14,10 @@ exports.getOrCreateProfile = async (userId) => {
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      return await ReferralProfile.create({ user: userId, code: generateCode() });
+      return await ReferralProfile.create({
+        user: userId,
+        code: generateCode(),
+      });
     } catch (error) {
       if (error.code !== 11000) throw error;
       const profile = await ReferralProfile.findOne({ user: userId });
@@ -49,7 +52,12 @@ exports.validateForUser = async ({ referralCode, referredUserId }) => {
   return profile;
 };
 
-exports.track = async ({ referralCode, courseId, referredUserId, sessionId }) => {
+exports.track = async ({
+  referralCode,
+  courseId,
+  referredUserId,
+  sessionId,
+}) => {
   const profile = await exports.findCode(referralCode);
   if (!profile) {
     throw Object.assign(new Error("Referral code not found"), {
@@ -86,7 +94,14 @@ exports.track = async ({ referralCode, courseId, referredUserId, sessionId }) =>
   return attribution;
 };
 
-exports.attachToPayment = async ({ referralCode, courseId, referredUserId, sessionId, paymentId, paymentReference }) => {
+exports.attachToPayment = async ({
+  referralCode,
+  courseId,
+  referredUserId,
+  sessionId,
+  paymentId,
+  paymentReference,
+}) => {
   if (!referralCode) {
     return ReferralAttribution.findOneAndUpdate(
       {
@@ -97,11 +112,20 @@ exports.attachToPayment = async ({ referralCode, courseId, referredUserId, sessi
           ...(sessionId ? [{ sessionId }] : []),
         ],
       },
-      { $set: { payment: paymentId, paymentReference, lastTrackedAt: new Date() } },
+      {
+        $set: {
+          payment: paymentId,
+          paymentReference,
+          lastTrackedAt: new Date(),
+        },
+      },
       { new: true },
     );
   }
-  const profile = await exports.validateForUser({ referralCode, referredUserId });
+  const profile = await exports.validateForUser({
+    referralCode,
+    referredUserId,
+  });
   return ReferralAttribution.findOneAndUpdate(
     {
       referrer: profile.user,
@@ -135,10 +159,15 @@ exports.awardForPayment = async (payment) => {
     $or: [{ payment: payment._id }, { paymentReference: payment.reference }],
     status: "pending",
   });
-  if (!attribution || String(attribution.referrer) === String(payment.student)) return null;
+  if (!attribution || String(attribution.referrer) === String(payment.student))
+    return null;
 
   const referredUser = await User.findById(payment.student).select("_id");
-  if (!referredUser || String(attribution.referrer) === String(referredUser._id)) return null;
+  if (
+    !referredUser ||
+    String(attribution.referrer) === String(referredUser._id)
+  )
+    return null;
 
   let reward;
   try {
@@ -153,7 +182,8 @@ exports.awardForPayment = async (payment) => {
       paidAt: new Date(),
     });
   } catch (error) {
-    if (error.code === 11000) return ReferralReward.findOne({ payment: payment._id });
+    if (error.code === 11000)
+      return ReferralReward.findOne({ payment: payment._id });
     throw error;
   }
   await ReferralProfile.updateOne(
@@ -169,12 +199,20 @@ exports.awardForPayment = async (payment) => {
 
 exports.getSummary = async (userId) => {
   const profile = await exports.getOrCreateProfile(userId);
-  const [paid, pendingAttributions, successfulReferrals, clicks] = await Promise.all([
-    ReferralReward.aggregate([{ $match: { referrer: userId, status: "paid" } }, { $group: { _id: null, total: { $sum: "$amount" } } }]),
-    ReferralAttribution.countDocuments({ referrer: userId, status: "pending", referredUser: { $exists: true } }),
-    ReferralReward.countDocuments({ referrer: userId, status: "paid" }),
-    ReferralAttribution.countDocuments({ referrer: userId }),
-  ]);
+  const [paid, pendingAttributions, successfulReferrals, clicks] =
+    await Promise.all([
+      ReferralReward.aggregate([
+        { $match: { referrer: userId, status: "paid" } },
+        { $group: { _id: null, total: { $sum: "$amount" } } },
+      ]),
+      ReferralAttribution.countDocuments({
+        referrer: userId,
+        status: "pending",
+        referredUser: { $exists: true },
+      }),
+      ReferralReward.countDocuments({ referrer: userId, status: "paid" }),
+      ReferralAttribution.countDocuments({ referrer: userId }),
+    ]);
   return {
     referralCode: profile.code,
     balance: profile.balance,
@@ -201,13 +239,21 @@ exports.getHistory = async ({ userId, page = 1, limit = 20 }) => {
   return {
     items: items.map((item) => ({
       id: item._id,
-      referredUser: item.referredUser && { id: item.referredUser._id, fullName: item.referredUser.fullName },
+      referredUser: item.referredUser && {
+        id: item.referredUser._id,
+        fullName: item.referredUser.fullName,
+      },
       course: item.course && { id: item.course._id, title: item.course.title },
       amount: item.amount,
       status: item.status,
       createdAt: item.createdAt,
     })),
-    meta: { page: normalizedPage, limit: normalizedLimit, total, pages: Math.ceil(total / normalizedLimit) },
+    meta: {
+      page: normalizedPage,
+      limit: normalizedLimit,
+      total,
+      pages: Math.ceil(total / normalizedLimit),
+    },
   };
 };
 

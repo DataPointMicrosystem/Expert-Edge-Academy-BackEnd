@@ -1,7 +1,11 @@
 const router = require("express").Router();
 const controller = require("../controller/courseController");
 const asyncHandler = require("../utils/asyncHandler");
-const { Authentication, requireRoles } = require("../middleware/auth");
+const {
+  Authentication,
+  optionalAuthentication,
+  requireRoles,
+} = require("../middleware/auth");
 
 router.get("/", asyncHandler(controller.list));
 router.get(
@@ -24,7 +28,11 @@ router.get(
   requireRoles("instructor"),
   asyncHandler(controller.instructorCourses),
 );
-router.get("/:slug", asyncHandler(controller.getBySlug));
+router.get(
+  "/:slug",
+  optionalAuthentication,
+  asyncHandler(controller.getBySlug),
+);
 router.post(
   "/",
   Authentication,

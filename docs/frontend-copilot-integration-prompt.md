@@ -805,12 +805,12 @@ Implement and verify these flows in order:
 13. Connect student enrollments and progress.
 14. Connect wishlist.
 15. Connect reviews and ratings.
-17. Connect referrals: code, tracking, summary, history, and payment attribution.
-18. Connect certificates and notifications.
-19. Connect instructor course management and approval status.
-20. Connect admin-only screens only where they exist in the frontend.
-21. Add loading, empty, unauthorized, forbidden, payment-pending, payment-failed, and server-error states.
-22. Test desktop and mobile behavior after integration.
+16. Connect referrals: code, tracking, summary, history, and payment attribution.
+17. Connect certificates and notifications.
+18. Connect instructor course management and approval status.
+19. Connect admin-only screens only where they exist in the frontend.
+20. Add loading, empty, unauthorized, forbidden, payment-pending, payment-failed, and server-error states.
+21. Test desktop and mobile behavior after integration.
 
 ## Important Limitations
 

@@ -51,22 +51,40 @@ test("missing bearer token is rejected with 401", async () => {
 
 test("self-referral validation rejects the owner's code", async () => {
   const originalFindCode = referralService.findCode;
-  referralService.findCode = async () => ({ user: "user-1", code: "ABC1234567" });
+  referralService.findCode = async () => ({
+    user: "user-1",
+    code: "ABC1234567",
+  });
   await assert.rejects(
-    referralService.validateForUser({ referralCode: "ABC1234567", referredUserId: "user-1" }),
-    (error) => error.code === "SELF_REFERRAL_NOT_ALLOWED" && error.statusCode === 400,
+    referralService.validateForUser({
+      referralCode: "ABC1234567",
+      referredUserId: "user-1",
+    }),
+    (error) =>
+      error.code === "SELF_REFERRAL_NOT_ALLOWED" && error.statusCode === 400,
   );
   referralService.findCode = originalFindCode;
 });
 
 test("referral attribution is stored as pending and does not reward a click", async (t) => {
-  t.mock.method(ReferralProfile, "findOne", async () => ({ user: "referrer-1", code: "ABC1234567" }));
-  t.mock.method(ReferralAttribution, "findOneAndUpdate", async (query, update) => ({
-    _id: "attribution-1",
-    status: update.$set.status,
-    referrer: query.referrer,
+  t.mock.method(ReferralProfile, "findOne", async () => ({
+    user: "referrer-1",
+    code: "ABC1234567",
   }));
-  const attribution = await referralService.track({ referralCode: "abc1234567", courseId: "course-1", sessionId: "session-1" });
+  t.mock.method(
+    ReferralAttribution,
+    "findOneAndUpdate",
+    async (query, update) => ({
+      _id: "attribution-1",
+      status: update.$set.status,
+      referrer: query.referrer,
+    }),
+  );
+  const attribution = await referralService.track({
+    referralCode: "abc1234567",
+    courseId: "course-1",
+    sessionId: "session-1",
+  });
   assert.equal(attribution.status, "pending");
   assert.equal(attribution.referrer, "referrer-1");
 });
@@ -77,11 +95,17 @@ test("successful payment creates one referral reward and updates balance", async
   t.mock.method(ReferralAttribution, "findOne", async () => ({
     referrer: "referrer-1",
     status: "pending",
-    save: async function save() { this.status = "converted"; },
+    save: async function save() {
+      this.status = "converted";
+    },
   }));
-  t.mock.method(User, "findById", () => ({ select: async () => ({ _id: "student-1" }) }));
+  t.mock.method(User, "findById", () => ({
+    select: async () => ({ _id: "student-1" }),
+  }));
   t.mock.method(ReferralReward, "create", async (value) => value);
-  t.mock.method(ReferralProfile, "updateOne", async (_query, update) => { balanceUpdate = update; });
+  t.mock.method(ReferralProfile, "updateOne", async (_query, update) => {
+    balanceUpdate = update;
+  });
   const reward = await referralService.awardForPayment({
     _id: "payment-1",
     status: "successful",
@@ -94,22 +118,43 @@ test("successful payment creates one referral reward and updates balance", async
 });
 
 test("failed payments do not create referral rewards", async () => {
-  const reward = await referralService.awardForPayment({ _id: "payment-failed", status: "failed" });
+  const reward = await referralService.awardForPayment({
+    _id: "payment-failed",
+    status: "failed",
+  });
   assert.equal(reward, null);
 });
 
 test("duplicate payment reward returns the existing reward", async (t) => {
   const existing = { _id: "reward-1", amount: 2500 };
   t.mock.method(ReferralReward, "findOne", async () => existing);
-  const reward = await referralService.awardForPayment({ _id: "payment-duplicate", status: "successful" });
+  const reward = await referralService.awardForPayment({
+    _id: "payment-duplicate",
+    status: "successful",
+  });
   assert.equal(reward, existing);
 });
 
 test("referral summary returns balance and aggregate counts", async (t) => {
-  t.mock.method(referralService, "getOrCreateProfile", async () => ({ code: "ABC1234567", balance: 2500, totalEarned: 2500 }));
-  t.mock.method(ReferralReward, "aggregate", async (pipeline) => pipeline[0].$match.status === "paid" ? [{ total: 2500 }] : []);
+  t.mock.method(referralService, "getOrCreateProfile", async () => ({
+    code: "ABC1234567",
+    balance: 2500,
+    totalEarned: 2500,
+  }));
+  t.mock.method(ReferralReward, "aggregate", async (pipeline) =>
+    pipeline[0].$match.status === "paid" ? [{ total: 2500 }] : [],
+  );
   t.mock.method(ReferralReward, "countDocuments", async () => 1);
-  t.mock.method(ReferralAttribution, "countDocuments", async (query) => query.status === "pending" ? 2 : 4);
+  t.mock.method(ReferralAttribution, "countDocuments", async (query) =>
+    query.status === "pending" ? 2 : 4,
+  );
   const summary = await referralService.getSummary("referrer-1");
-  assert.deepEqual(summary, { referralCode: "ABC1234567", balance: 2500, totalEarned: 2500, pendingBalance: 5000, successfulReferrals: 1, clicks: 4 });
+  assert.deepEqual(summary, {
+    referralCode: "ABC1234567",
+    balance: 2500,
+    totalEarned: 2500,
+    pendingBalance: 5000,
+    successfulReferrals: 1,
+    clicks: 4,
+  });
 });

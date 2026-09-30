@@ -6,6 +6,7 @@ const Lesson = require("../model/lesson");
 const paymentService = require("../services/paymentService");
 const { notify } = require("../services/notificationService");
 const referralService = require("../services/referralService");
+const subscriptionService = require("../services/subscriptionService");
 const { success, failure } = require("../utils/apiResponse");
 
 const feePercentage = () => Number(process.env.PLATFORM_FEE_PERCENTAGE || 15);
@@ -25,6 +26,12 @@ const createEnrollment = async (payment, course) => {
     student: payment.student,
     course: payment.course,
   });
+  if (enrollment?.type === "subscription") {
+    enrollment.type = "paid";
+    enrollment.payment = payment._id;
+    enrollment.subscription = undefined;
+    await enrollment.save();
+  }
   if (!enrollment) {
     try {
       enrollment = await Enrollment.create({
@@ -68,8 +75,24 @@ exports.initialize = async (req, res) => {
       "Use free enrollment for this course",
       "COURSE_IS_FREE",
     );
-  if (await Enrollment.exists({ student: req.user._id, course: course._id }))
+  const existingEnrollment = await Enrollment.exists({
+    student: req.user._id,
+    course: course._id,
+    type: { $ne: "subscription" },
+  });
+  if (existingEnrollment)
     return failure(res, 409, "You are already enrolled", "ALREADY_ENROLLED");
+  const access = await subscriptionService.hasCourseAccess(
+    req.user._id,
+    course._id,
+  );
+  if (access.source === "subscription")
+    return failure(
+      res,
+      409,
+      "This course is included in your active subscription",
+      "COURSE_INCLUDED_IN_SUBSCRIPTION",
+    );
   if (req.body.referralCode) {
     await referralService.validateForUser({
       referralCode: req.body.referralCode,

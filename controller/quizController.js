@@ -2,6 +2,7 @@ const Quiz = require("../model/quiz");
 const QuizAttempt = require("../model/quizAttempt");
 const Enrollment = require("../model/enrollment");
 const Course = require("../model/course");
+const subscriptionService = require("../services/subscriptionService");
 const { success, failure } = require("../utils/apiResponse");
 exports.create = async (req, res) => {
   const course = await Course.findOne({
@@ -29,16 +30,26 @@ exports.get = async (req, res) => {
     "-questions.correctAnswer",
   );
   if (!quiz) return failure(res, 404, "Quiz not found", "QUIZ_NOT_FOUND");
+  if (
+    !(await subscriptionService.hasCourseAccess(req.user._id, quiz.course))
+      .allowed
+  )
+    return failure(res, 403, "Course access required", "QUIZ_ACCESS_DENIED");
   return success(res, 200, "Quiz retrieved", quiz);
 };
 exports.start = async (req, res) => {
   const quiz = await Quiz.findById(req.params.quizId);
+  if (!quiz) return failure(res, 404, "Quiz not found", "QUIZ_NOT_FOUND");
   const enrollment = await Enrollment.findOne({
     student: req.user._id,
-    course: quiz?.course,
+    course: quiz.course,
     status: { $in: ["active", "completed"] },
   });
-  if (!quiz || !enrollment)
+  const access = await subscriptionService.hasCourseAccess(
+    req.user._id,
+    quiz.course,
+  );
+  if (!enrollment || !access.allowed)
     return failure(res, 403, "Enrollment required", "QUIZ_ACCESS_DENIED");
   const attempts = await QuizAttempt.countDocuments({
     quiz: quiz._id,
@@ -79,6 +90,11 @@ exports.submit = async (req, res) => {
       "Quiz attempt not found or already submitted",
       "QUIZ_ATTEMPT_INVALID",
     );
+  if (
+    !(await subscriptionService.hasCourseAccess(req.user._id, attempt.course))
+      .allowed
+  )
+    return failure(res, 403, "Course access required", "QUIZ_ACCESS_DENIED");
   const submitted = req.body.answers || [];
   let score = 0;
   let possible = 0;

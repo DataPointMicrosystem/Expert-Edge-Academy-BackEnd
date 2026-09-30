@@ -23,12 +23,17 @@ const swaggerSpec = require("./docs/openapi");
 const databaseGuard = require("./middleware/database");
 const mediaRouter = require("./routes/mediaRouter");
 const referralRouter = require("./routes/referralRouter");
+const subscriptionRouter = require("./routes/subscriptionRouter");
 
 const app = express();
 app.disable("x-powered-by");
 app.use(helmet());
 app.use(cors({ origin: "*" }));
 app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
+app.use(
+  "/api/subscriptions/webhook",
+  express.raw({ type: "application/json" }),
+);
 app.use(express.json({ limit: "1mb" }));
 app.use(
   fileUpload({
@@ -71,6 +76,7 @@ app.use("/api/enrollments", databaseGuard, enrollmentRouter);
 app.use("/api/cart", databaseGuard, cartRouter);
 app.use("/api/wishlist", databaseGuard, wishlistRouter);
 app.use("/api/payments", databaseGuard, paymentRouter);
+app.use("/api/subscriptions", databaseGuard, subscriptionRouter);
 app.use("/api/reviews", databaseGuard, reviewRouter);
 app.use("/api/certificates", databaseGuard, certificateRouter);
 app.use("/api/users", databaseGuard, accountRouter);

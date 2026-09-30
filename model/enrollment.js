@@ -14,8 +14,13 @@ const enrollmentSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    type: { type: String, enum: ["free", "paid"], required: true },
+    type: {
+      type: String,
+      enum: ["free", "paid", "subscription"],
+      required: true,
+    },
     payment: { type: mongoose.Schema.Types.ObjectId, ref: "Payment" },
+    subscription: { type: mongoose.Schema.Types.ObjectId, ref: "Subscription" },
     status: {
       type: String,
       enum: ["active", "completed", "dropped"],

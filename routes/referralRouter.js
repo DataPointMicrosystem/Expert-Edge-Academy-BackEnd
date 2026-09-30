@@ -1,7 +1,10 @@
 const router = require("express").Router();
 const controller = require("../controller/referralController");
 const asyncHandler = require("../utils/asyncHandler");
-const { Authentication, optionalAuthentication } = require("../middleware/auth");
+const {
+  Authentication,
+  optionalAuthentication,
+} = require("../middleware/auth");
 
 router.post("/track", optionalAuthentication, asyncHandler(controller.track));
 router.use(Authentication);

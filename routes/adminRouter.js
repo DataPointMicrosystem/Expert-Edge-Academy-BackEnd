@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const controller = require("../controller/adminController");
 const courseController = require("../controller/courseController");
+const subscriptionController = require("../controller/subscriptionController");
 const asyncHandler = require("../utils/asyncHandler");
 const { Authentication, requireRoles } = require("../middleware/auth");
 router.use(Authentication, requireRoles("admin"));
@@ -14,6 +15,22 @@ router.patch(
   asyncHandler(courseController.adminPublish),
 );
 router.get("/payments", asyncHandler(controller.payments));
+router.get(
+  "/subscription-plans",
+  asyncHandler(subscriptionController.adminPlans),
+);
+router.post(
+  "/subscription-plans",
+  asyncHandler(subscriptionController.createPlan),
+);
+router.patch(
+  "/subscription-plans/:planId",
+  asyncHandler(subscriptionController.updatePlan),
+);
+router.delete(
+  "/subscription-plans/:planId",
+  asyncHandler(subscriptionController.archivePlan),
+);
 router.get("/reviews", asyncHandler(controller.reviews));
 router.get("/certificates", asyncHandler(controller.certificates));
 router.get("/categories", asyncHandler(controller.categories));

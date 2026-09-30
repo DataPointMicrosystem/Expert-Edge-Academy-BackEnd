@@ -7,6 +7,8 @@ const User = require("../model/user");
 const { success, failure } = require("../utils/apiResponse");
 const { notify } = require("../services/notificationService");
 const { issueForEnrollment } = require("../services/certificateService");
+const subscriptionService = require("../services/subscriptionService");
+const Subscription = require("../model/subscription");
 
 const prerequisitesComplete = async (courseId, studentId) => {
   const course = await Course.findById(courseId).select("prerequisites");
@@ -73,8 +75,20 @@ exports.freeEnroll = async (req, res) => {
 };
 
 exports.myEnrollments = async (req, res) => {
+  const activeSubscriptions = await Subscription.find({
+    student: req.user._id,
+    status: "active",
+    renewalDate: { $gt: new Date() },
+  }).select("_id");
   const enrollments = await Enrollment.find({
     student: req.user._id,
+    $or: [
+      { type: { $ne: "subscription" } },
+      {
+        type: "subscription",
+        subscription: { $in: activeSubscriptions.map(({ _id }) => _id) },
+      },
+    ],
     ...(req.query.status ? { status: req.query.status } : {}),
   })
     .populate({
@@ -95,6 +109,21 @@ exports.getEnrollment = async (req, res) => {
   }).populate("course");
   if (!enrollment)
     return failure(res, 404, "Enrollment not found", "ENROLLMENT_NOT_FOUND");
+  if (
+    enrollment.type === "subscription" &&
+    !(
+      await subscriptionService.hasCourseAccess(
+        req.user._id,
+        enrollment.course._id,
+      )
+    ).allowed
+  )
+    return failure(
+      res,
+      403,
+      "Subscription course access has expired",
+      "COURSE_ACCESS_DENIED",
+    );
   const [sections, lessons, progress] = await Promise.all([
     Section.find({ course: enrollment.course._id }).sort({ order: 1 }),
     Lesson.find({ course: enrollment.course._id, isPublished: true }).sort({
@@ -117,6 +146,21 @@ exports.updateProgress = async (req, res) => {
   }).populate("course");
   if (!enrollment)
     return failure(res, 404, "Enrollment not found", "ENROLLMENT_NOT_FOUND");
+  if (
+    enrollment.type === "subscription" &&
+    !(
+      await subscriptionService.hasCourseAccess(
+        req.user._id,
+        enrollment.course._id,
+      )
+    ).allowed
+  )
+    return failure(
+      res,
+      403,
+      "Subscription course access has expired",
+      "COURSE_ACCESS_DENIED",
+    );
   const lesson = await Lesson.findOne({
     _id: req.body.lessonId,
     course: enrollment.course._id,
@@ -179,9 +223,20 @@ exports.checkAccess = async (req, res) => {
   const enrollment = await Enrollment.findOne({
     student: req.user._id,
     course: req.params.courseId,
+    type: { $ne: "subscription" },
     status: { $in: ["active", "completed"] },
   });
-  if (!enrollment)
+  const access = enrollment
+    ? { allowed: true, source: "enrollment" }
+    : await subscriptionService.hasCourseAccess(
+        req.user._id,
+        req.params.courseId,
+      );
+  if (!access.allowed)
     return failure(res, 403, "Enrollment required", "COURSE_ACCESS_DENIED");
-  return success(res, 200, "Course access granted", enrollment);
+  return success(res, 200, "Course access granted", {
+    courseId: req.params.courseId,
+    access: { granted: true, source: access.source },
+    enrollment: enrollment || null,
+  });
 };

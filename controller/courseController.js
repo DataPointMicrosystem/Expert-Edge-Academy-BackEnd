@@ -6,6 +6,7 @@ const AdminAction = require("../model/adminAction");
 const User = require("../model/user");
 const { success, failure } = require("../utils/apiResponse");
 const slugify = require("../utils/slugify");
+const subscriptionService = require("../services/subscriptionService");
 
 const ownerOrAdmin = (course, user) =>
   user.role === "admin" || String(course.instructor) === String(user._id);
@@ -81,11 +82,20 @@ exports.getBySlug = async (req, res) => {
   const lessons = await Lesson.find({ course: course._id, isPublished: true })
     .sort({ order: 1 })
     .lean();
+  const access = req.user
+    ? await subscriptionService.hasCourseAccess(req.user._id, course._id)
+    : { allowed: false, source: null };
+  const visibleLessons = lessons.map((lesson) => {
+    if (access.allowed || lesson.isPreviewable) return lesson;
+    const { video, document, resources, ...preview } = lesson;
+    return preview;
+  });
   return success(res, 200, "Course retrieved", {
     course,
+    access: { granted: access.allowed, source: access.source },
     sections: sections.map((section) => ({
       ...section,
-      lessons: lessons.filter(
+      lessons: visibleLessons.filter(
         (lesson) => String(lesson.section) === String(section._id),
       ),
     })),
