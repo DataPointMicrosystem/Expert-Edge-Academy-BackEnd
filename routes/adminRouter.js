@@ -5,6 +5,7 @@ const subscriptionController = require("../controller/subscriptionController");
 const asyncHandler = require("../utils/asyncHandler");
 const { Authentication, requireRoles } = require("../middleware/auth");
 router.use(Authentication, requireRoles("admin"));
+
 router.get("/analytics", asyncHandler(controller.analytics));
 router.get("/users", asyncHandler(controller.users));
 router.patch("/users/:userId/status", asyncHandler(controller.setStatus));
@@ -15,6 +16,10 @@ router.patch(
   asyncHandler(courseController.adminPublish),
 );
 router.get("/payments", asyncHandler(controller.payments));
+router.get(
+  "/subscriptions",
+  asyncHandler(subscriptionController.adminSubscriptions),
+);
 router.get(
   "/subscription-plans",
   asyncHandler(subscriptionController.adminPlans),

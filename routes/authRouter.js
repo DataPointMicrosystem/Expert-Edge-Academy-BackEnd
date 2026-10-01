@@ -2,7 +2,9 @@ const router = require("express").Router();
 
 const {
   signUp,
+  adminSignUp,
   login,
+  adminLogin,
   loginwithGoogle,
   signUpWithGoogle,
   forgotpassword,
@@ -15,6 +17,8 @@ const { profile, loginProfile } = require("../middleware/passport");
 router.post("/sign-up", signUp);
 router.post("/signup", signUp);
 router.post("/login", login);
+router.post("/admin-sign-up", adminSignUp);
+router.post("/admin-login", adminLogin);
 router.post("/verify-email", verifyEmail);
 router.post("/resend-verification", resendVerification);
 router.post("/forgot-password", forgotpassword);

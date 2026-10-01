@@ -28,7 +28,7 @@ const subscriptionRouter = require("./routes/subscriptionRouter");
 const app = express();
 app.disable("x-powered-by");
 app.use(helmet());
-app.use(cors({ origin: "*" }));
+app.use(cors({ origin: "*", exposedHeaders: ["Authorization"] }));
 app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
 app.use(
   "/api/subscriptions/webhook",

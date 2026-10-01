@@ -68,6 +68,25 @@ exports.initialize = async (req, res) => {
   }).populate("instructor", "_id");
   if (!course)
     return failure(res, 404, "Published course not found", "COURSE_NOT_FOUND");
+  if (course.accessType === "subscription_only")
+    return failure(
+      res,
+      409,
+      "This course is available through a subscription plan",
+      "SUBSCRIPTION_REQUIRED",
+    );
+  if (
+    !(await subscriptionService.prerequisitesComplete(
+      course.prerequisites,
+      req.user._id,
+    ))
+  )
+    return failure(
+      res,
+      403,
+      "Complete prerequisite courses before purchasing this course",
+      "PREREQUISITES_NOT_MET",
+    );
   if (course.price <= 0)
     return failure(
       res,

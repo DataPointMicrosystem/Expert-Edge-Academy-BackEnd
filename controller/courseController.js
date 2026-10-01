@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Course = require("../model/course");
 const Section = require("../model/section");
 const Lesson = require("../model/lesson");
@@ -7,10 +8,96 @@ const User = require("../model/user");
 const { success, failure } = require("../utils/apiResponse");
 const slugify = require("../utils/slugify");
 const subscriptionService = require("../services/subscriptionService");
+const SubscriptionPlan = require("../model/subscriptionPlan");
 
 const ownerOrAdmin = (course, user) =>
   user.role === "admin" || String(course.instructor) === String(user._id);
 const publishedFilter = { status: "published" };
+
+const resolveCourseAccess = async ({
+  accessType,
+  price,
+  subscriptionPlanIds = [],
+  courseId,
+}) => {
+  const normalizedPrice = Number(price);
+  const normalizedType =
+    accessType || (normalizedPrice > 0 ? "individual_only" : "free");
+  const allowedTypes = ["free", "individual_only", "subscription_only", "both"];
+  if (!Number.isFinite(normalizedPrice) || normalizedPrice < 0)
+    return { error: "Course price must be a non-negative number" };
+  if (!allowedTypes.includes(normalizedType))
+    return { error: "Unsupported course accessType" };
+  if (
+    !Array.isArray(subscriptionPlanIds) ||
+    subscriptionPlanIds.some((id) => !mongoose.isValidObjectId(id))
+  )
+    return { error: "subscriptionPlanIds must be an array of valid plan IDs" };
+
+  const planIds = [...new Set(subscriptionPlanIds.map(String))];
+  if (normalizedType === "free" && (normalizedPrice > 0 || planIds.length))
+    return { error: "Free courses cannot have a price or plan assignments" };
+  if (
+    normalizedType === "individual_only" &&
+    (!normalizedPrice || planIds.length)
+  )
+    return {
+      error: "Individual-only courses require a price and no plan assignments",
+    };
+  if (normalizedType === "subscription_only" && !planIds.length)
+    return {
+      error: "Subscription-only courses must be assigned to an active plan",
+    };
+  if (normalizedType === "both" && (!normalizedPrice || !planIds.length))
+    return {
+      error:
+        "Courses using both access methods require a price and an active plan",
+    };
+
+  if (!planIds.length) return { accessType: normalizedType, planIds: [] };
+  const plans = await SubscriptionPlan.find({
+    _id: { $in: planIds },
+    isActive: true,
+  });
+  if (plans.length !== planIds.length)
+    return { error: "Only existing active subscription plans can be assigned" };
+  for (const plan of plans) {
+    const alreadyAssigned =
+      courseId && plan.courses.some((id) => String(id) === String(courseId));
+    if (
+      plan.courseAccessLimit &&
+      !alreadyAssigned &&
+      plan.courses.length >= plan.courseAccessLimit
+    )
+      return {
+        error: `Plan ${plan.planId} has reached its course access limit`,
+      };
+  }
+  return { accessType: normalizedType, planIds: plans.map((plan) => plan._id) };
+};
+
+const assignCourseToPlans = async (courseId, previousPlanIds, nextPlanIds) => {
+  const previous = new Set(previousPlanIds.map(String));
+  const next = new Set(nextPlanIds.map(String));
+  const removed = [...previous].filter((id) => !next.has(id));
+  const added = [...next].filter((id) => !previous.has(id));
+  await Promise.all([
+    removed.length
+      ? SubscriptionPlan.updateMany(
+          { _id: { $in: removed } },
+          { $pull: { courses: courseId } },
+        )
+      : null,
+    added.length
+      ? SubscriptionPlan.updateMany(
+          { _id: { $in: added }, isActive: true },
+          { $addToSet: { courses: courseId } },
+        )
+      : null,
+  ]);
+};
+
+exports.validateCourseAccess = resolveCourseAccess;
 
 exports.list = async (req, res) => {
   const {
@@ -79,12 +166,21 @@ exports.getBySlug = async (req, res) => {
   const sections = await Section.find({ course: course._id })
     .sort({ order: 1 })
     .lean();
+  const subscriptionPlans = await SubscriptionPlan.find({
+    courses: course._id,
+    isActive: true,
+  }).select("planId name");
   const lessons = await Lesson.find({ course: course._id, isPublished: true })
     .sort({ order: 1 })
     .lean();
   const access = req.user
     ? await subscriptionService.hasCourseAccess(req.user._id, course._id)
-    : { allowed: false, source: null };
+    : course.accessType === "free" ||
+        (course.price <= 0 &&
+          course.accessType !== "subscription_only" &&
+          !course.prerequisites.length)
+      ? { allowed: true, source: "free" }
+      : { allowed: false, source: null };
   const visibleLessons = lessons.map((lesson) => {
     if (access.allowed || lesson.isPreviewable) return lesson;
     const { video, document, resources, ...preview } = lesson;
@@ -92,6 +188,7 @@ exports.getBySlug = async (req, res) => {
   });
   return success(res, 200, "Course retrieved", {
     course,
+    subscriptionPlanIds: subscriptionPlans.map((plan) => plan._id),
     access: { granted: access.allowed, source: access.source },
     sections: sections.map((section) => ({
       ...section,
@@ -116,6 +213,8 @@ exports.create = async (req, res) => {
     learningOutcomes,
     requirements,
     prerequisites,
+    accessType,
+    subscriptionPlanIds = [],
   } = req.body;
   if (!title || !shortDescription || !description || !category || !level)
     return failure(
@@ -124,6 +223,13 @@ exports.create = async (req, res) => {
       "Required course fields are missing",
       "VALIDATION_ERROR",
     );
+  const accessSelection = await resolveCourseAccess({
+    accessType,
+    price: Number(price) || 0,
+    subscriptionPlanIds,
+  });
+  if (accessSelection.error)
+    return failure(res, 400, accessSelection.error, "INVALID_COURSE_ACCESS");
   const baseSlug = slugify(title);
   const slug = `${baseSlug}-${Date.now().toString(36)}`;
   const course = await Course.create({
@@ -136,12 +242,14 @@ exports.create = async (req, res) => {
     level,
     language,
     price: Number(price) || 0,
+    accessType: accessSelection.accessType,
     originalPrice,
     thumbnail,
     learningOutcomes,
     requirements,
     prerequisites,
   });
+  await assignCourseToPlans(course._id, [], accessSelection.planIds);
   return success(res, 201, "Course draft created", course);
 };
 
@@ -157,6 +265,31 @@ exports.update = async (req, res) => {
       "Published courses require an admin update workflow",
       "COURSE_PUBLISHED_LOCKED",
     );
+  const accessFieldsSent =
+    req.body.accessType !== undefined ||
+    req.body.subscriptionPlanIds !== undefined ||
+    req.body.price !== undefined;
+  let accessSelection;
+  if (accessFieldsSent) {
+    const assignedPlans = await SubscriptionPlan.find({
+      courses: course._id,
+      isActive: true,
+    })
+      .select("_id")
+      .lean();
+    accessSelection = await resolveCourseAccess({
+      accessType: req.body.accessType ?? course.accessType,
+      price:
+        req.body.price === undefined ? course.price : Number(req.body.price),
+      subscriptionPlanIds:
+        req.body.subscriptionPlanIds === undefined
+          ? assignedPlans.map(({ _id }) => _id)
+          : req.body.subscriptionPlanIds,
+      courseId: course._id,
+    });
+    if (accessSelection.error)
+      return failure(res, 400, accessSelection.error, "INVALID_COURSE_ACCESS");
+  }
   const allowed = [
     "title",
     "shortDescription",
@@ -170,15 +303,31 @@ exports.update = async (req, res) => {
     "learningOutcomes",
     "requirements",
     "prerequisites",
+    "accessType",
   ];
   allowed.forEach((field) => {
     if (req.body[field] !== undefined) course[field] = req.body[field];
   });
+  if (accessSelection) {
+    course.accessType = accessSelection.accessType;
+    course.price =
+      req.body.price === undefined ? course.price : Number(req.body.price);
+  }
   if (course.status === "rejected" && req.user.role !== "admin") {
     course.status = "draft";
     course.rejectionReason = undefined;
   }
   await course.save();
+  if (accessSelection) {
+    const assignedPlans = await SubscriptionPlan.find({ courses: course._id })
+      .select("_id")
+      .lean();
+    await assignCourseToPlans(
+      course._id,
+      assignedPlans.map(({ _id }) => _id),
+      accessSelection.planIds,
+    );
+  }
   return success(res, 200, "Course updated", course);
 };
 

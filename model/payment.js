@@ -21,6 +21,13 @@ const paymentSchema = new mongoose.Schema(
     },
     enrollment: { type: mongoose.Schema.Types.ObjectId, ref: "Enrollment" },
     reference: { type: String, required: true, unique: true, index: true },
+    transactionType: {
+      type: String,
+      enum: ["course"],
+      default: "course",
+      required: true,
+      index: true,
+    },
     providerTransactionId: String,
     provider: { type: String, enum: ["kora"], default: "kora" },
     amount: { type: Number, required: true, min: 0 },

@@ -1,37 +1,45 @@
-# Frontend Subscription Handoff
+# Frontend Developer Handoff: Courses And Subscriptions
 
-This document is for the frontend Copilot implementing or repairing ExpertEdge Academy subscription UI. It describes the backend contract as implemented. Use the API as the authority for plan price, included courses, payment state, and access. The frontend's local subscription demo state must not grant access.
+This guide describes the backend contract for the ExpertEdge Academy frontend. It is intended to be handed to the frontend developer or Copilot as implementation instructions. Use backend API responses as the authority for plan availability, price, purchase state, and course access. Local/demo auth state, plan constants, query parameters, and payment redirect success must never unlock paid content.
 
-## Current Setup State
+## Current Database Catalog
 
-The configured backend database currently has no subscription plans, courses, categories, or users. Until an admin creates the required catalog data, `GET /api/subscriptions/plans` returns an empty array and subscription checkout cannot succeed. Show an appropriate unavailable/empty state; do not silently offer local demo plans as purchasable products. An admin must first create course records and then create the plans with their course IDs.
+Four plan documents are already present in the configured MongoDB database:
 
-The plan IDs and UI catalog values intended for setup are:
+| `planId`       | Name         |      Price | Duration | Current state                               |
+| -------------- | ------------ | ---------: | -------: | ------------------------------------------- |
+| `beginner`     | Beginner     | NGN 25,000 | 3 months | Not purchasable: no actual courses assigned |
+| `intermediate` | Intermediate | NGN 40,000 | 3 months | Not purchasable: no actual courses assigned |
+| `professional` | Professional | NGN 65,000 | 6 months | Not purchasable: no actual courses assigned |
+| `advanced`     | Advanced     | NGN 90,000 | 6 months | Not purchasable: no actual courses assigned |
 
-| planId         | Name         | Price (NGN) |     Term |
-| -------------- | ------------ | ----------: | -------: |
-| `beginner`     | Beginner     |       25000 | 3 months |
-| `intermediate` | Intermediate |       40000 | 3 months |
-| `professional` | Professional |       65000 | 6 months |
-| `advanced`     | Advanced     |       90000 | 6 months |
+Their level, description, benefits/features, accent, popularity, and suggested course names are stored. Suggested names are returned as `plannedCourseTitles` and are informational only. The database currently has no Course documents. Each plan has `courses: []`, so the catalog marks all four `isPurchasable: false` with `availabilityMessage: "Courses will be added later."` The UI may display the plan descriptions and suggested names, but must disable Subscribe/Checkout until real published course records have been assigned by an admin.
 
-The backend plan API returns `planId`, `name`, `description`, `price`, `amount`, `currency`, `durationMonths`, `courses`, and `benefits`. `courses` is an array of course objects with `_id`, `title`, and `slug`, not the display-name strings in the old frontend constant. Use `_id` or `slug` as the key. The `level`, `accent`, and `popular` properties in the old frontend constant are presentation metadata and are not returned or stored by the backend; those may remain in frontend configuration keyed by `planId`. Do not use local `price` or `courses` as checkout authority.
+`plannedCourseTitles` are never course IDs and never grant access. Real entitlements use Mongo Course references in `courses`, which the public API populates as course objects `{ _id, title, slug }`. Do not match titles to courses in the frontend to simulate assignment.
 
-## Base URL And Authentication
+## API Origin, Auth, And Envelope
 
-Use the configured backend origin plus `/api` (development: `http://localhost:1023/api`). The success envelope is `{ "success": true, "message": "...", "data": ... }`. Errors use `{ "success": false, "message": "...", "error": { "code": "..." } }`.
+Use the backend origin plus `/api`; local development is `http://localhost:1023/api`. Requests use JSON. Successful responses use:
 
-Send `Authorization: Bearer <JWT>` for `/subscriptions/me`, `/subscriptions/initialize`, `/subscriptions/verify/:reference`, and enrollment access. Subscription routes require a `student` account. The public plan list and Kora webhook do not use the student's JWT. The client must never send a user ID or price to establish ownership or payment amount.
-
-## Student Endpoints
-
-### List purchasable plans
-
-```http
-GET /api/subscriptions/plans
+```json
+{ "success": true, "message": "...", "data": {} }
 ```
 
-Public endpoint. Returns only active admin-configured plans.
+Errors use:
+
+```json
+{ "success": false, "message": "...", "error": { "code": "..." } }
+```
+
+Send `Authorization: Bearer <JWT>` for student subscription, enrollment/access, and admin endpoints. Student subscription endpoints require the `student` role. Admin plan and subscription reporting endpoints require an `admin` JWT. Plan catalog/detail endpoints are public. Never send price or user ID to initialize a subscription; the backend derives both from the saved plan and bearer-authenticated user.
+
+## Public Plan Catalog
+
+### `GET /api/subscriptions/plans`
+
+Returns active plans, including plans that cannot yet be purchased. The response plan fields include `planId`, `name`, `level`, `accent`, `description`, `amount`, `price`, `currency`, `billingInterval`, `durationMonths`, `courses`, `plannedCourseTitles`, `courseAccessLimit`, `benefits`, `features`, `popular`, `isPurchasable`, `autoRenew`, and `availabilityMessage`.
+
+Example of the current unavailable-plan shape:
 
 ```json
 {
@@ -41,34 +49,55 @@ Public endpoint. Returns only active admin-configured plans.
     {
       "planId": "beginner",
       "name": "Beginner",
-      "description": "Build everyday computer confidence.",
+      "level": "Start here",
+      "accent": "blue",
+      "description": "Build the everyday computer confidence you need to learn, work, and explore online.",
       "amount": 25000,
       "price": 25000,
       "currency": "NGN",
+      "billingInterval": "one_time",
       "durationMonths": 3,
-      "courses": [
-        {
-          "_id": "66f0123456789abcdef01234",
-          "title": "Computer Fundamentals",
-          "slug": "computer-fundamentals"
-        }
+      "courses": [],
+      "plannedCourseTitles": [
+        "Desktop Publishing",
+        "Computer Fundamentals",
+        "Microsoft Word",
+        "Internet & Email Basics",
+        "Basic Computer Skills"
       ],
-      "benefits": ["Foundational courses", "Learn at your own pace"]
+      "courseAccessLimit": null,
+      "benefits": [
+        "5 foundational courses",
+        "Learn at your own pace",
+        "Completion certificates"
+      ],
+      "features": [
+        "5 foundational courses",
+        "Learn at your own pace",
+        "Completion certificates"
+      ],
+      "popular": false,
+      "isPurchasable": false,
+      "autoRenew": false,
+      "availabilityMessage": "Courses will be added later."
     }
   ]
 }
 ```
 
-Use `price` for display; `amount` is the payment-oriented alias. The server uses its stored amount during initialization, even if the browser submits a different value.
+Render cards from this API response rather than a hardcoded purchasable catalog. For styling, `accent` and `popular` are provided by the backend but remain presentation-only. `price` and `amount` currently have the same value; use `price` for display. Format as NGN. `billingInterval: "one_time"` means manual one-off payment; `autoRenew` is false. Do not show a recurring-billing promise.
 
-### Get the current user's subscription
+### `GET /api/subscriptions/plans/:planId`
 
-```http
-GET /api/subscriptions/me
-Authorization: Bearer <JWT>
-```
+Public endpoint returning the same response shape for one active plan. A missing or inactive plan returns `404 PLAN_NOT_FOUND`.
 
-No subscription record:
+## Student Subscription State
+
+### `GET /api/subscriptions/me`
+
+Requires a student JWT. This is the authoritative current subscription/entitlement request. Call on login/app startup and after payment verification.
+
+No subscription:
 
 ```json
 {
@@ -81,46 +110,19 @@ No subscription record:
 }
 ```
 
-Active subscription (abbreviated):
+Active subscription data includes `planId`, `planName`, `billingInterval`, `status`, `startedAt`, `renewalDate`, `amount`, `currency`, and `reference`. `entitlement.courses` contains course objects. When status is pending, `authorizationUrl` is included if checkout was initialized.
 
-```json
-{
-  "success": true,
-  "message": "Subscription retrieved",
-  "data": {
-    "subscription": {
-      "planId": "beginner",
-      "planName": "Beginner",
-      "status": "active",
-      "startedAt": "2026-09-30T12:00:00.000Z",
-      "renewalDate": "2026-12-30T12:00:00.000Z",
-      "amount": 25000,
-      "currency": "NGN",
-      "reference": "EES-..."
-    },
-    "entitlement": {
-      "active": true,
-      "courses": [
-        {
-          "_id": "66f0123456789abcdef01234",
-          "slug": "computer-fundamentals",
-          "title": "Computer Fundamentals"
-        }
-      ]
-    }
-  }
-}
-```
+Only grant plan access when `entitlement.active === true`. `renewalDate` is the access end date, not the date of a scheduled charge. The backend statuses are `pending`, `active`, `expired`, `failed`, and `abandoned`; only an active, unexpired subscription grants subscription access.
 
-For a pending purchase, `subscription.status` is `pending`, dates are null, and `authorizationUrl` is included when available so the user can resume hosted checkout. When `entitlement.active` is false, do not show paid access even if an old local state says active.
+### `GET /api/subscriptions/history`
 
-### Initialize checkout
+Requires a student JWT. Returns only that student's subscription records, newest first. Use this in a payment/subscription history view; don't infer active entitlement from a historic successful record.
 
-```http
-POST /api/subscriptions/initialize
-Authorization: Bearer <JWT>
-Content-Type: application/json
-```
+## Subscription Checkout
+
+### `POST /api/subscriptions/initialize`
+
+Requires a student JWT. Send a plan ID and optional callback URL only:
 
 ```json
 {
@@ -129,69 +131,50 @@ Content-Type: application/json
 }
 ```
 
-Only `planId` is required. `callbackUrl` is optional if the backend has `FRONTEND_PAYMENT_CALLBACK_URL` configured.
+Do not send `amount`, `price`, `studentId`, or a course list. The backend loads price and course assignments from MongoDB. It refuses plans without published course assignments using `409 PLAN_COURSES_UNAVAILABLE`; the four current plans will return this until their course IDs are assigned.
 
-```json
-{
-  "success": true,
-  "message": "Subscription payment initialized",
-  "data": {
-    "subscriptionId": "...",
-    "planId": "beginner",
-    "reference": "EES-...",
-    "authorizationUrl": "https://...",
-    "provider": "kora"
-  }
-}
-```
-
-Before redirecting, save `data.reference` in session storage under a subscription-specific key. Redirect the browser to `data.authorizationUrl`; do not mark the user active based on the redirect, query parameters, or a frontend callback alone.
-
-### Verify after hosted checkout
-
-```http
-POST /api/subscriptions/verify/EES-...
-Authorization: Bearer <JWT>
-```
-
-The reference must be the one returned by initialize and belongs to the authenticated user. The backend checks Kora's server response, amount, and currency before activation.
-
-Confirmed response data:
+For a purchasable plan, response data is:
 
 ```json
 {
   "subscriptionId": "...",
   "planId": "beginner",
-  "status": "active",
-  "startedAt": "2026-09-30T12:00:00.000Z",
-  "renewalDate": "2026-12-30T12:00:00.000Z",
-  "amount": 25000,
-  "currency": "NGN",
-  "reference": "EES-..."
+  "reference": "EES-...",
+  "authorizationUrl": "https://...",
+  "provider": "kora"
 }
 ```
 
-If verification returns HTTP 202, payment is still pending. Keep the UI in a pending state and retry verification or refresh `/subscriptions/me`; do not grant access. After a confirmed response, clear the saved reference and refresh `/subscriptions/me` before rendering active benefits.
+The provider in this backend is Kora, not Paystack. Save `reference` in session storage before leaving the site, then redirect the browser to `authorizationUrl`. Never activate UI access because a redirect happened or because the browser has payment query parameters.
 
-## Recommended UI Flow
+### `POST /api/subscriptions/verify/:reference`
 
-1. On subscription page load, request `GET /subscriptions/plans` and `GET /subscriptions/me` in parallel when signed in. Render the server catalog and the user's current entitlement.
-2. If the plan list is empty, show that plans are not available yet and disable purchase actions. Do not fill in the plan list from local data as if it were purchasable.
-3. If there is no current subscription, allow selecting a server-returned plan. Send only its `planId` to initialize.
-4. If initialize returns HTTP 409 with `SUBSCRIPTION_ALREADY_EXISTS`, refresh `/subscriptions/me`. If it is pending, offer its `authorizationUrl` to resume; if active, show the current plan/end date.
-5. On the hosted-payment return screen, retrieve the saved reference and call verify. Show pending/failure states explicitly. On success, refresh current subscription and the user's course access.
-6. On app startup/login, refresh `/subscriptions/me`. Local state may cache the response for display, but must never authoritatively unlock a course.
+Requires the same student's JWT. Call this on the payment-return page using the saved reference. The backend verifies the transaction directly with Kora and checks amount/currency before activation.
 
-Backend statuses are `pending`, `active`, `expired`, `failed`, and `abandoned`. Only `active` with `entitlement.active === true` grants paid access. `renewalDate` is the end of access, not a scheduled charge. Terms are one-time payments; there is no automatic renewal. A new purchase is blocked while one is pending or active, and may be started after expiry.
+- `200`: payment confirmed; clear pending reference and refresh `/subscriptions/me`.
+- `202`: payment still pending; keep access locked and allow a later retry/refresh.
+- `402 PAYMENT_NOT_SUCCESSFUL` or `PAYMENT_MISMATCH`: keep access locked and show a safe failure/retry state.
+- `404 SUBSCRIPTION_NOT_FOUND`: reference does not belong to this account or does not exist.
 
-## Course Access
+The provider webhook is server-to-server at `POST /api/subscriptions/webhook`; the frontend does not call it.
 
-```http
-GET /api/enrollments/access/:courseId
-Authorization: Bearer <JWT>
-```
+## Recommended Student UI Flow
 
-Access response data:
+1. Load `GET /subscriptions/plans`; when signed in, also load `GET /subscriptions/me`.
+2. Render the server catalog. Show `availabilityMessage` and disable Subscribe when `isPurchasable` is false. Current stored planned titles are preview metadata, not confirmed course records.
+3. When the user chooses an available plan, call initialize with `planId` and the frontend return URL, save `reference`, then redirect to `authorizationUrl`.
+4. On the return screen, call verify with the stored reference. If pending, retain the pending state and offer retry. Never unlock on redirect alone.
+5. On verified payment, refresh `/subscriptions/me` and use its entitlement list to render course access.
+6. On HTTP 409 `SUBSCRIPTION_ALREADY_EXISTS`, refresh `/subscriptions/me`: resume the pending `authorizationUrl` or show the active plan/end date.
+7. On sign-out, clear local subscription display state. On next sign-in, fetch the current state again.
+
+All current plans are one-time/manual and `autoRenew` is false. A second subscription purchase is blocked while the student has a pending purchase or active term; after expiry the student may purchase again. There is no active-term cancellation endpoint.
+
+## Course Access And Individual Purchase
+
+### `GET /api/enrollments/access/:courseId`
+
+Requires a student JWT. Response data on success:
 
 ```json
 {
@@ -201,63 +184,100 @@ Access response data:
 }
 ```
 
-`source` can be `subscription` or `enrollment`. Denied access returns HTTP 403 with `error.code: "COURSE_ACCESS_DENIED"`. Course detail (`GET /api/courses/:slug`) is public, but includes `data.access`; without access, non-preview lesson media fields are omitted. The frontend should still use the access endpoint before entering a course. Do not infer access from a plan card, enrollment row alone, or client-side subscription state.
+`source` may be `subscription`, `enrollment`, or `free`. HTTP 403 `COURSE_ACCESS_DENIED` means keep protected learning UI locked.
 
-The backend creates subscription-linked enrollment records after confirmed payment so current learning/progress flows can use them. They stop granting access after the subscription expires. Individual course purchases and free enrollments remain separate access sources.
+### Course details and learning
 
-## Error Handling
+`GET /api/courses/:slug` is public and returns `data.access`; non-preview lesson media URLs are omitted without access. The app should check access before entering lesson/progress/quiz workflows and handle backend 403s. Backend access checks verify the course is published and prerequisites are complete.
 
-| HTTP | Error code                                                        | Frontend behavior                                                             |
-| ---: | ----------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-|  401 | `AUTH_TOKEN_MISSING`, `AUTH_TOKEN_INVALID`, `ACCOUNT_UNAVAILABLE` | Refresh auth or ask the user to sign in.                                      |
-|  403 | `COURSE_ACCESS_DENIED`                                            | Show the plan/course purchase path; do not expose protected course content.   |
-|  404 | `PLAN_NOT_FOUND`                                                  | Refresh the catalog; the plan may have been archived.                         |
-|  409 | `SUBSCRIPTION_ALREADY_EXISTS`                                     | Refresh `/subscriptions/me`; resume pending checkout or show the active term. |
-|  402 | `PAYMENT_NOT_SUCCESSFUL`, `PAYMENT_MISMATCH`                      | Keep access locked; show retry/support state and refresh `/subscriptions/me`. |
-|  202 | pending verify response                                           | Keep the payment pending; retry verification or refresh current state.        |
+Individual course checkout remains independent of subscriptions:
 
-All errors use `{ "success": false, "message": "...", "error": { "code": "..." } }`. Avoid showing raw provider messages to users.
+- `POST /api/payments/initialize` accepts `courseId` and optional referral/callback fields. The server loads price and student identity.
+- `POST /api/payments/verify/:reference` verifies with Kora and creates/activates the permanent individual enrollment after confirmed payment.
+- `GET /api/payments/history` returns the current student's purchase history.
 
-## Admin Catalog Setup (Optional Frontend Work)
+A valid individual paid enrollment remains valid after subscription expiry. The backend prevents duplicate individual charges when the student already has individual/free enrollment or active subscription coverage. If a course has `accessType: "subscription_only"`, individual payment initialization is rejected.
 
-These endpoints are for an admin plan-management screen, not the student purchase UI. They require a Bearer token for an `admin` user:
+## Course Create/Edit Access Fields
 
-- `GET /api/admin/subscription-plans` lists active and archived plans.
-- `POST /api/admin/subscription-plans` creates a plan.
-- `PATCH /api/admin/subscription-plans/:planId` updates plan fields.
-- `DELETE /api/admin/subscription-plans/:planId` archives a plan.
-
-Create payload uses course IDs, not titles:
+Instructor/admin course create (`POST /api/courses`) and update (`PUT /api/courses/:courseId`) accept:
 
 ```json
 {
-  "planId": "beginner",
-  "name": "Beginner",
-  "description": "Build everyday computer confidence.",
-  "amount": 25000,
-  "durationMonths": 3,
-  "courseIds": ["66f0123456789abcdef01234"],
-  "benefits": [
-    "5 foundational courses",
-    "Learn at your own pace",
-    "Completion certificates"
-  ]
+  "accessType": "both",
+  "price": 18000,
+  "subscriptionPlanIds": ["66f0123456789abcdef01234"]
 }
 ```
 
-The configured database currently has no courses or plans, so an admin must create the courses and then populate the four plans before the student plan endpoint returns products. The frontend can be implemented against the contract now, but production checkout must remain disabled until that catalog setup is complete.
+Access types:
 
-## Implementation Checklist For Frontend Copilot
+- `free`: zero price and no plan assignments.
+- `individual_only`: positive price and no plan assignments.
+- `subscription_only`: one or more active plans; individual checkout is blocked.
+- `both`: positive price and one or more active plans.
+
+Only active plans can be newly assigned. The backend enforces plan course limits and existing course ownership/approval rules. Do not auto-assign every course to every plan. Current course records do not exist yet, so there are no real assignment IDs to show in course forms.
+
+## Admin Plan Management (Optional Admin UI)
+
+All `/api/admin/*` routes require `Authorization: Bearer <admin JWT>`.
+
+- `GET /api/admin/subscription-plans`: list active and inactive plans.
+- `POST /api/admin/subscription-plans`: create a plan, including an empty plan.
+- `PATCH /api/admin/subscription-plans/:planId`: update plan fields and assignments. `courseIds: []` removes assignments.
+- `DELETE /api/admin/subscription-plans/:planId`: deactivate/archive; it prevents new purchases but does not revoke existing paid subscription snapshots.
+- `GET /api/admin/subscriptions?status=active`: inspect subscriptions and aggregate status/revenue report. Supported status filters are `pending`, `active`, `expired`, `failed`, and `abandoned`.
+
+Create/update uses Course IDs only for actual assignments. `plannedCourseTitles` are informational. Admins can configure a plan before courses exist; a positive price, duration, and plan ID are still required. Example create body:
+
+```json
+{
+  "planId": "custom-plan",
+  "name": "Custom Plan",
+  "level": "Career ready",
+  "description": "Courses will be added later.",
+  "amount": 50000,
+  "currency": "NGN",
+  "billingInterval": "one_time",
+  "durationMonths": 6,
+  "courseAccessLimit": 8,
+  "courseIds": [],
+  "plannedCourseTitles": ["Planned course title"],
+  "features": ["Project-based learning"],
+  "accent": "gold",
+  "popular": false
+}
+```
+
+## Error Handling
+
+| Status/code                                       | Frontend action                                                                      |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `401` auth error                                  | Re-authenticate; don't retry checkout as another user.                               |
+| `403 COURSE_ACCESS_DENIED`                        | Keep course locked; show individual/plan access options.                             |
+| `404 PLAN_NOT_FOUND`                              | Refresh plan catalog; plan may have been deactivated.                                |
+| `409 PLAN_COURSES_UNAVAILABLE`                    | Show courses-coming-later state; don't redirect to payment.                          |
+| `409 SUBSCRIPTION_ALREADY_EXISTS`                 | Refresh `/subscriptions/me` and resume pending checkout or show active subscription. |
+| `409 COURSE_INCLUDED_IN_SUBSCRIPTION`             | User already has this course through current plan; open learning flow.               |
+| `402 PAYMENT_NOT_SUCCESSFUL` / `PAYMENT_MISMATCH` | Keep access locked; show a safe failure state.                                       |
+| `202` from verify                                 | Payment remains pending; keep access locked and allow retry.                         |
+
+## Backend/Frontend Decisions And Limits
+
+- Payment provider currently implemented: Kora. There is no Paystack implementation in this backend; do not change provider integration from frontend work.
+- Billing: manual one-time terms only. No automatic recurring charges or subscription cancellation endpoint.
+- Course catalog: empty in the currently configured DB. The four plans exist but are not purchasable until real published Course documents are assigned.
+- Frontend code is not in this workspace; this document defines the integration contract but frontend components must be updated in the frontend repository.
+- Media: API responses omit protected media fields for users without access, but existing Cloudinary assets use public URLs. A previously exposed URL cannot be revoked by this API check; origin-level media protection needs private/authenticated Cloudinary delivery and signed playback URLs.
+
+## Frontend Copilot Checklist
 
 - Replace local/demo subscription authority with `GET /subscriptions/me`.
-- Load the purchasable catalog from `GET /subscriptions/plans` and handle an empty list.
-- Preserve `planId` and `reference` through the external Kora redirect.
-- Verify with the backend after redirect; only the verified backend response unlocks access.
-- Add pending, active, expired, failed, abandoned, unauthenticated, and empty-catalog states.
-- Use returned course `_id` or `slug` for links/keys; use `title` only as display text.
-- Keep visual-only plan styling keyed by `planId`; do not make frontend price/course lists authoritative.
-- Check access before course learning actions and honor 403 responses.
-
-## Media Caveat
-
-The API withholds non-preview lesson media URLs from users without entitlement. Existing Cloudinary uploads use public delivery URLs, however, so a URL exposed previously cannot be revoked by this API check. Full origin-level protection requires migrating lesson media to private/authenticated Cloudinary delivery with signed playback URLs.
+- Render `GET /subscriptions/plans`; disable purchase for `isPurchasable: false`.
+- Treat `plannedCourseTitles` as display-only; never use it for course routing or access.
+- Use stable `_id`/`slug` from actual `courses` for course links and keys.
+- Send only `planId` to subscription initialize; preserve the returned reference through checkout.
+- Verify server-side after Kora return; refresh `/subscriptions/me` before showing active status.
+- Implement unauthenticated, empty catalog, unavailable plan, pending, active, expired, failed, abandoned, and retry states.
+- Keep course checks server-authoritative; handle 403 responses for course, lesson, quiz, and progress actions.

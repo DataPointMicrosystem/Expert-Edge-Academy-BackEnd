@@ -28,6 +28,13 @@ exports.freeEnroll = async (req, res) => {
   });
   if (!course)
     return failure(res, 404, "Published course not found", "COURSE_NOT_FOUND");
+  if (course.accessType === "subscription_only")
+    return failure(
+      res,
+      409,
+      "This course is available through a subscription plan",
+      "SUBSCRIPTION_REQUIRED",
+    );
   if (course.price > 0)
     return failure(
       res,
@@ -110,7 +117,6 @@ exports.getEnrollment = async (req, res) => {
   if (!enrollment)
     return failure(res, 404, "Enrollment not found", "ENROLLMENT_NOT_FOUND");
   if (
-    enrollment.type === "subscription" &&
     !(
       await subscriptionService.hasCourseAccess(
         req.user._id,
@@ -147,7 +153,6 @@ exports.updateProgress = async (req, res) => {
   if (!enrollment)
     return failure(res, 404, "Enrollment not found", "ENROLLMENT_NOT_FOUND");
   if (
-    enrollment.type === "subscription" &&
     !(
       await subscriptionService.hasCourseAccess(
         req.user._id,
@@ -220,20 +225,21 @@ exports.updateProgress = async (req, res) => {
 };
 
 exports.checkAccess = async (req, res) => {
-  const enrollment = await Enrollment.findOne({
-    student: req.user._id,
-    course: req.params.courseId,
-    type: { $ne: "subscription" },
-    status: { $in: ["active", "completed"] },
-  });
-  const access = enrollment
-    ? { allowed: true, source: "enrollment" }
-    : await subscriptionService.hasCourseAccess(
-        req.user._id,
-        req.params.courseId,
-      );
+  const access = await subscriptionService.hasCourseAccess(
+    req.user._id,
+    req.params.courseId,
+  );
   if (!access.allowed)
     return failure(res, 403, "Enrollment required", "COURSE_ACCESS_DENIED");
+  const enrollment =
+    access.source === "enrollment"
+      ? await Enrollment.findOne({
+          student: req.user._id,
+          course: req.params.courseId,
+          type: { $ne: "subscription" },
+          status: { $in: ["active", "completed"] },
+        })
+      : null;
   return success(res, 200, "Course access granted", {
     courseId: req.params.courseId,
     access: { granted: true, source: access.source },

@@ -10,18 +10,33 @@ const { success, failure } = require("../utils/apiResponse");
 const activePlanData = (plan) => ({
   planId: plan.planId,
   name: plan.name,
+  level: plan.level,
+  accent: plan.accent,
   description: plan.description,
   amount: plan.amount,
   price: plan.amount,
-  currency: "NGN",
+  currency: plan.currency || "NGN",
+  billingInterval: plan.billingInterval,
   durationMonths: plan.durationMonths,
   courses: plan.courses,
-  benefits: plan.benefits,
+  plannedCourseTitles: plan.plannedCourseTitles || [],
+  courseAccessLimit: plan.courseAccessLimit || null,
+  benefits: plan.features?.length ? plan.features : plan.benefits,
+  features: plan.features?.length ? plan.features : plan.benefits,
+  popular: Boolean(plan.popular),
+  isPurchasable: plan.courses.length > 0,
+  autoRenew: false,
+  availabilityMessage:
+    plan.courses.length > 0 ? null : "Courses will be added later.",
 });
 
 exports.plans = async (_req, res) => {
   const plans = await SubscriptionPlan.find({ isActive: true })
-    .populate("courses", "title slug")
+    .populate({
+      path: "courses",
+      match: { status: "published" },
+      select: "title slug status",
+    })
     .sort({ amount: 1 })
     .lean();
   return success(
@@ -32,9 +47,25 @@ exports.plans = async (_req, res) => {
   );
 };
 
+exports.planDetails = async (req, res) => {
+  const plan = await SubscriptionPlan.findOne({
+    planId: req.params.planId.toLowerCase(),
+    isActive: true,
+  })
+    .populate({
+      path: "courses",
+      match: { status: "published" },
+      select: "title slug status",
+    })
+    .lean();
+  if (!plan)
+    return failure(res, 404, "Subscription plan not found", "PLAN_NOT_FOUND");
+  return success(res, 200, "Subscription plan retrieved", activePlanData(plan));
+};
+
 exports.adminPlans = async (_req, res) => {
   const plans = await SubscriptionPlan.find()
-    .populate("courses", "title slug")
+    .populate("courses", "title slug status")
     .sort({ createdAt: -1 })
     .lean();
   return success(res, 200, "Subscription plans retrieved", plans);
@@ -44,22 +75,34 @@ exports.createPlan = async (req, res) => {
   const {
     planId,
     name,
+    level,
+    accent,
     description,
-    amount,
     durationMonths,
     courseIds,
+    plannedCourseTitles = [],
     benefits,
+    features,
+    billingInterval = "one_time",
+    currency = "NGN",
+    courseAccessLimit,
+    popular = false,
   } = req.body;
+  const amount = req.body.amount ?? req.body.price;
+  const selectedCourseIds = courseIds === undefined ? [] : courseIds;
   const validation = validatePlan({
     planId,
     name,
     amount,
     durationMonths,
-    courseIds,
+    courseIds: selectedCourseIds,
+    billingInterval,
+    currency,
+    courseAccessLimit,
   });
   if (validation) return failure(res, 400, validation, "VALIDATION_ERROR");
-  const courses = await resolveCourses(courseIds);
-  if (!courses)
+  const courses = await resolveCourses(selectedCourseIds);
+  if (courses === null)
     return failure(
       res,
       400,
@@ -71,11 +114,19 @@ exports.createPlan = async (req, res) => {
     plan = await SubscriptionPlan.create({
       planId: planId.toLowerCase(),
       name,
+      level,
+      accent,
       description,
       amount,
+      currency,
+      billingInterval,
       durationMonths,
+      courseAccessLimit,
       courses,
-      benefits,
+      plannedCourseTitles,
+      benefits: features || benefits,
+      features: features || benefits,
+      popular,
     });
   } catch (error) {
     if (error.code === 11000)
@@ -94,23 +145,33 @@ exports.updatePlan = async (req, res) => {
   const updates = {};
   for (const key of [
     "name",
+    "level",
+    "accent",
     "description",
     "amount",
     "durationMonths",
     "benefits",
+    "features",
     "isActive",
+    "billingInterval",
+    "currency",
+    "courseAccessLimit",
+    "popular",
+    "plannedCourseTitles",
   ])
     if (req.body[key] !== undefined) updates[key] = req.body[key];
+  if (req.body.price !== undefined && req.body.amount === undefined)
+    updates.amount = req.body.price;
   if (req.body.courseIds !== undefined) {
-    if (!Array.isArray(req.body.courseIds) || !req.body.courseIds.length)
+    if (!Array.isArray(req.body.courseIds))
       return failure(
         res,
         400,
-        "courseIds must be a non-empty array",
+        "courseIds must be an array",
         "VALIDATION_ERROR",
       );
     const courses = await resolveCourses(req.body.courseIds);
-    if (!courses)
+    if (courses === null)
       return failure(
         res,
         400,
@@ -118,6 +179,43 @@ exports.updatePlan = async (req, res) => {
         "INVALID_COURSES",
       );
     updates.courses = courses;
+  }
+  if (
+    updates.billingInterval !== undefined &&
+    !["one_time", "monthly", "quarterly", "annually"].includes(
+      updates.billingInterval,
+    )
+  )
+    return failure(res, 400, "Unsupported billingInterval", "VALIDATION_ERROR");
+  if (updates.currency !== undefined && updates.currency !== "NGN")
+    return failure(
+      res,
+      400,
+      "Only NGN payments are currently supported",
+      "UNSUPPORTED_CURRENCY",
+    );
+  if (
+    updates.courseAccessLimit !== undefined &&
+    (!Number.isInteger(updates.courseAccessLimit) ||
+      updates.courseAccessLimit < 1)
+  )
+    return failure(
+      res,
+      400,
+      "courseAccessLimit must be a positive integer",
+      "VALIDATION_ERROR",
+    );
+  if (updates.courseAccessLimit !== undefined && !updates.courses) {
+    const existingPlan = await SubscriptionPlan.findOne({
+      planId: req.params.planId.toLowerCase(),
+    }).select("courses");
+    if (existingPlan && existingPlan.courses.length > updates.courseAccessLimit)
+      return failure(
+        res,
+        400,
+        "Course assignments exceed courseAccessLimit",
+        "COURSE_LIMIT_EXCEEDED",
+      );
   }
   if (
     updates.amount !== undefined &&
@@ -192,6 +290,7 @@ exports.current = async (req, res) => {
     subscription: {
       planId: record.planId,
       planName: record.planName,
+      billingInterval: record.billingInterval,
       status,
       startedAt: record.startedAt || null,
       renewalDate: record.renewalDate || null,
@@ -206,6 +305,49 @@ exports.current = async (req, res) => {
   });
 };
 
+exports.history = async (req, res) => {
+  const records = await Subscription.find({ student: req.user._id })
+    .populate("plan", "planId name billingInterval")
+    .sort({ createdAt: -1 });
+  return success(res, 200, "Subscription history retrieved", records);
+};
+
+exports.adminSubscriptions = async (req, res) => {
+  await Subscription.updateMany(
+    { status: "active", renewalDate: { $lte: new Date() } },
+    { $set: { status: "expired" }, $unset: { currentKey: 1 } },
+  );
+  const statuses = ["pending", "active", "expired", "failed", "abandoned"];
+  const filter = statuses.includes(req.query.status)
+    ? { status: req.query.status }
+    : {};
+  const [records, counts, revenue] = await Promise.all([
+    Subscription.find(filter)
+      .populate("student", "fullName email")
+      .populate("plan", "planId name")
+      .sort({ createdAt: -1 })
+      .limit(200),
+    Subscription.aggregate([
+      { $group: { _id: "$status", count: { $sum: 1 } } },
+    ]),
+    Subscription.aggregate([
+      { $match: { status: { $in: ["active", "expired"] } } },
+      {
+        $group: {
+          _id: "$currency",
+          transactionCount: { $sum: 1 },
+          total: { $sum: "$amount" },
+        },
+      },
+    ]),
+  ]);
+  return success(res, 200, "Subscription report retrieved", {
+    subscriptions: records,
+    counts: Object.fromEntries(counts.map(({ _id, count }) => [_id, count])),
+    confirmedRevenue: revenue,
+  });
+};
+
 exports.initialize = async (req, res) => {
   const planId =
     typeof req.body.planId === "string"
@@ -216,6 +358,17 @@ exports.initialize = async (req, res) => {
   const plan = await SubscriptionPlan.findOne({ planId, isActive: true });
   if (!plan)
     return failure(res, 404, "Subscription plan not found", "PLAN_NOT_FOUND");
+  const eligibleCourses = await Course.find({
+    _id: { $in: plan.courses },
+    status: "published",
+  }).select("_id");
+  if (!eligibleCourses.length)
+    return failure(
+      res,
+      409,
+      "This plan has no published courses available yet",
+      "PLAN_COURSES_UNAVAILABLE",
+    );
 
   const now = new Date();
   await subscriptionService.expireCurrent(req.user._id, now);
@@ -240,7 +393,9 @@ exports.initialize = async (req, res) => {
       plan: plan._id,
       planId: plan.planId,
       planName: plan.name,
-      includedCourses: plan.courses,
+      billingInterval: plan.billingInterval,
+      planFeatures: plan.features?.length ? plan.features : plan.benefits,
+      includedCourses: eligibleCourses.map((course) => course._id),
       durationMonths: plan.durationMonths,
       reference,
       amount: plan.amount,
@@ -426,7 +581,16 @@ exports.webhook = async (req, res) => {
   return res.status(200).json({ success: true });
 };
 
-const validatePlan = ({ planId, name, amount, durationMonths, courseIds }) => {
+const validatePlan = ({
+  planId,
+  name,
+  amount,
+  durationMonths,
+  courseIds = [],
+  billingInterval = "one_time",
+  currency = "NGN",
+  courseAccessLimit,
+}) => {
   if (typeof planId !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/i.test(planId))
     return "planId must be a stable lowercase identifier";
   if (typeof name !== "string" || !name.trim()) return "name is required";
@@ -440,25 +604,38 @@ const validatePlan = ({ planId, name, amount, durationMonths, courseIds }) => {
     return "durationMonths must be between 1 and 36";
   if (
     !Array.isArray(courseIds) ||
-    !courseIds.length ||
     courseIds.some((id) => !mongoose.isValidObjectId(id))
   )
-    return "courseIds must be a non-empty array of valid course IDs";
+    return "courseIds must be an array of valid course IDs";
+  if (
+    !["one_time", "monthly", "quarterly", "annually"].includes(billingInterval)
+  )
+    return "Unsupported billingInterval";
+  if (currency !== "NGN") return "Only NGN payments are currently supported";
+  if (
+    courseAccessLimit !== undefined &&
+    (!Number.isInteger(courseAccessLimit) || courseAccessLimit < 1)
+  )
+    return "courseAccessLimit must be a positive integer";
+  if (courseAccessLimit && courseIds.length > courseAccessLimit)
+    return "Course assignments exceed courseAccessLimit";
   return null;
 };
 
 const resolveCourses = async (courseIds) => {
   if (
     !Array.isArray(courseIds) ||
-    !courseIds.length ||
     courseIds.some((id) => !mongoose.isValidObjectId(id))
   )
     return null;
+  if (!courseIds.length) return [];
   const courses = await Course.find({ _id: { $in: courseIds } }).select("_id");
   return courses.length === new Set(courseIds.map(String)).size
     ? courses.map((course) => course._id)
     : null;
 };
+
+exports.validatePlanRequest = validatePlan;
 
 const failSubscription = async (subscription, transaction, status) =>
   Subscription.updateOne(

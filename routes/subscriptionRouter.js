@@ -9,8 +9,10 @@ router.post(
   asyncHandler(controller.webhook),
 );
 router.get("/plans", asyncHandler(controller.plans));
+router.get("/plans/:planId", asyncHandler(controller.planDetails));
 router.use(Authentication, requireRoles("student"));
 router.get("/me", asyncHandler(controller.current));
+router.get("/history", asyncHandler(controller.history));
 router.post("/initialize", asyncHandler(controller.initialize));
 router.post("/verify/:reference", asyncHandler(controller.verify));
 

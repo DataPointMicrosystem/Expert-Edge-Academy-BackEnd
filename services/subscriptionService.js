@@ -4,6 +4,7 @@ const Enrollment = require("../model/enrollment");
 const Course = require("../model/course");
 const Lesson = require("../model/lesson");
 const paymentService = require("./paymentService");
+const notificationService = require("./notificationService");
 
 const addMonths = (date, months) => {
   const result = new Date(date);
@@ -63,7 +64,26 @@ const activate = async (subscription, transaction) => {
     { new: true },
   );
   const result = activated || (await Subscription.findById(subscription._id));
-  if (result?.status === "active") await ensureLearningEnrollments(result);
+  if (result?.status === "active") {
+    await ensureLearningEnrollments(result);
+    if (activated) {
+      try {
+        await notificationService.notify({
+          user: result.student,
+          type: "subscription_success",
+          title: "Subscription activated",
+          message: `${result.planName} subscription is active until ${result.renewalDate.toISOString()}.`,
+          data: {
+            subscriptionId: result._id,
+            planId: result.planId,
+            renewalDate: result.renewalDate,
+          },
+        });
+      } catch (error) {
+        console.error("Subscription notification failed:", error.message);
+      }
+    }
+  }
   return result;
 };
 
@@ -99,6 +119,18 @@ const ensureLearningEnrollments = async (subscription) => {
 };
 
 const hasCourseAccess = async (studentId, courseId, now = new Date()) => {
+  const course = await Course.findOne({ _id: courseId, status: "published" })
+    .select("price accessType prerequisites")
+    .lean();
+  if (!course) return { allowed: false, source: null };
+  if (!(await prerequisitesComplete(course.prerequisites, studentId)))
+    return { allowed: false, source: null };
+  if (
+    course.accessType === "free" ||
+    (course.price <= 0 && course.accessType !== "subscription_only")
+  )
+    return { allowed: true, source: "free" };
+
   const enrollment = await Enrollment.exists({
     student: studentId,
     course: courseId,
@@ -118,6 +150,16 @@ const hasCourseAccess = async (studentId, courseId, now = new Date()) => {
     : { allowed: false, source: null };
 };
 
+const prerequisitesComplete = async (prerequisites = [], studentId) => {
+  if (!prerequisites.length) return true;
+  const completed = await Enrollment.countDocuments({
+    student: studentId,
+    course: { $in: prerequisites },
+    status: "completed",
+  });
+  return completed === prerequisites.length;
+};
+
 const expireCurrent = async (studentId, now = new Date()) => {
   await Subscription.updateMany(
     {
@@ -135,6 +177,7 @@ exports.matchesPayment = matchesPayment;
 exports.activate = activate;
 exports.ensureLearningEnrollments = ensureLearningEnrollments;
 exports.hasCourseAccess = hasCourseAccess;
+exports.prerequisitesComplete = prerequisitesComplete;
 exports.expireCurrent = expireCurrent;
 exports.paymentStatus = (transaction) => {
   if (paymentService.isPending(transaction)) return "pending";

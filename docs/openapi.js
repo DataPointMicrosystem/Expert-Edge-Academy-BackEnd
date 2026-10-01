@@ -34,6 +34,14 @@ module.exports = {
           title: { type: "string" },
           slug: { type: "string" },
           price: { type: "number" },
+          accessType: {
+            type: "string",
+            enum: ["free", "individual_only", "subscription_only", "both"],
+          },
+          subscriptionPlanIds: {
+            type: "array",
+            items: { type: "string" },
+          },
           level: { type: "string" },
           rating: { type: "number" },
           status: { type: "string" },
@@ -110,6 +118,32 @@ module.exports = {
       post: {
         summary: "Create instructor course",
         security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  accessType: {
+                    type: "string",
+                    enum: [
+                      "free",
+                      "individual_only",
+                      "subscription_only",
+                      "both",
+                    ],
+                  },
+                  subscriptionPlanIds: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Only active plans may be assigned.",
+                  },
+                },
+              },
+            },
+          },
+        },
         responses: { 201: { description: "Draft created" } },
       },
     },
@@ -155,6 +189,153 @@ module.exports = {
           200: { description: "Enrollment granted" },
           402: { description: "Payment failed" },
         },
+      },
+    },
+    "/subscriptions/plans": {
+      get: {
+        summary:
+          "List active subscription plans, including non-purchasable empty plans",
+        responses: {
+          200: { description: "Plan catalog with availability metadata" },
+        },
+      },
+    },
+    "/subscriptions/plans/{planId}": {
+      get: {
+        summary: "Get an active subscription plan",
+        parameters: [
+          {
+            name: "planId",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          200: { description: "Plan details" },
+          404: { description: "Plan not found" },
+        },
+      },
+    },
+    "/subscriptions/me": {
+      get: {
+        summary:
+          "Get the authenticated user's current subscription and entitlements",
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: "Current subscription" } },
+      },
+    },
+    "/subscriptions/history": {
+      get: {
+        summary: "Get the authenticated user's subscription payment history",
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: "Subscription history" } },
+      },
+    },
+    "/subscriptions/initialize": {
+      post: {
+        summary:
+          "Initialize a one-time subscription payment using a stored plan amount",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["planId"],
+                properties: {
+                  planId: { type: "string" },
+                  callbackUrl: { type: "string", format: "uri" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: "Hosted payment initialized" },
+          409: {
+            description:
+              "Existing pending/active subscription or plan has no published courses",
+          },
+        },
+      },
+    },
+    "/subscriptions/verify/{reference}": {
+      post: {
+        summary: "Verify a subscription payment server-side",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "reference",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          200: { description: "Subscription activated" },
+          202: { description: "Payment remains pending" },
+          402: { description: "Payment failed or amount mismatch" },
+        },
+      },
+    },
+    "/admin/subscription-plans": {
+      get: {
+        summary: "List all subscription plans",
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: "Admin plan catalog" } },
+      },
+      post: {
+        summary: "Create a plan, optionally with no courses assigned",
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object" } } },
+        },
+        responses: {
+          201: { description: "Plan created" },
+          400: { description: "Invalid plan configuration" },
+          409: { description: "Plan ID already exists" },
+        },
+      },
+    },
+    "/admin/subscription-plans/{planId}": {
+      patch: {
+        summary: "Update plan configuration and assigned course IDs",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "planId",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: { 200: { description: "Plan updated" } },
+      },
+      delete: {
+        summary: "Deactivate a plan without revoking existing paid access",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: "planId",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: { 200: { description: "Plan deactivated" } },
+      },
+    },
+    "/admin/subscriptions": {
+      get: {
+        summary: "List subscriptions and aggregate status/revenue reporting",
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "status", in: "query", schema: { type: "string" } },
+        ],
+        responses: { 200: { description: "Subscription report" } },
       },
     },
     "/courses/{courseId}/reviews": {

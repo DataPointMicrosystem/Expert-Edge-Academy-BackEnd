@@ -1,6 +1,7 @@
 const userModel = require("../model/user");
 require("dotenv").config();
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const otpGenerator = require("otp-generator");
 const { brevo } = require("../utils/brevo");
@@ -210,6 +211,113 @@ exports.login = async (req, res) => {
     });
   }
 };
+
+exports.adminSignUp = async (req, res) => {
+  const bootstrapSecret = process.env.ADMIN_BOOTSTRAP_SECRET;
+  const suppliedSecret = req.get("x-admin-bootstrap-secret") || "";
+  if (!bootstrapSecret)
+    return res.status(503).json({
+      success: false,
+      message: "Admin bootstrap is not configured",
+      error: { code: "ADMIN_BOOTSTRAP_UNAVAILABLE" },
+    });
+
+  const expected = Buffer.from(bootstrapSecret);
+  const supplied = Buffer.from(suppliedSecret);
+  if (
+    expected.length !== supplied.length ||
+    !crypto.timingSafeEqual(expected, supplied)
+  )
+    return res.status(403).json({
+      success: false,
+      message: "Invalid admin bootstrap credentials",
+      error: { code: "ADMIN_BOOTSTRAP_INVALID" },
+    });
+
+  const { fullName, email, password } = req.body;
+  if (
+    typeof fullName !== "string" ||
+    !fullName.trim() ||
+    typeof email !== "string" ||
+    !/^\S+@\S+\.\S+$/.test(email.trim()) ||
+    typeof password !== "string" ||
+    password.length < 12
+  )
+    return res.status(400).json({
+      success: false,
+      message:
+        "Full name, valid email, and password of at least 12 characters are required",
+      error: { code: "VALIDATION_ERROR" },
+    });
+
+  if (await userModel.exists({ role: "admin" }))
+    return res.status(409).json({
+      success: false,
+      message: "Admin bootstrap is already complete",
+      error: { code: "ADMIN_ALREADY_CONFIGURED" },
+    });
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (await userModel.exists({ email: normalizedEmail }))
+    return res.status(409).json({
+      success: false,
+      message: "An account with this email already exists",
+      error: { code: "EMAIL_ALREADY_EXISTS" },
+    });
+
+  const user = await userModel.create({
+    fullName: fullName.trim(),
+    email: normalizedEmail,
+    password: await bcrypt.hash(password, 12),
+    role: "admin",
+    isVerified: true,
+  });
+  return res.status(201).json({
+    success: true,
+    message: "Initial admin account created. Sign in to continue.",
+    data: { user: publicUser(user) },
+  });
+};
+
+exports.adminLogin = async (req, res) => {
+  const email =
+    typeof req.body.email === "string"
+      ? req.body.email.trim().toLowerCase()
+      : "";
+  const password = req.body.password;
+  if (!email || typeof password !== "string")
+    return res.status(400).json({
+      success: false,
+      message: "Email and password are required",
+      error: { code: "VALIDATION_ERROR" },
+    });
+
+  const user = await userModel
+    .findOne({ email, role: "admin" })
+    .select("+password");
+  if (
+    !user ||
+    !user.isActive ||
+    user.isSuspended ||
+    !user.isVerified ||
+    !(await bcrypt.compare(password, user.password))
+  )
+    return res.status(401).json({
+      success: false,
+      message: "Invalid admin credentials or unavailable account",
+      error: { code: "ADMIN_LOGIN_INVALID" },
+    });
+
+  user.lastLogin = new Date();
+  await user.save();
+  res.setHeader("Authorization", `Bearer ${createToken(user)}`);
+  return res.status(200).json({
+    success: true,
+    message: "Admin login successful",
+    data: { user: publicUser(user) },
+  });
+};
+
 exports.loginwithGoogle = async (req, res) => {
   try {
     if (!req.user) {

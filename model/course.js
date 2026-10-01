@@ -38,6 +38,12 @@ const courseSchema = new mongoose.Schema(
     language: { type: String, default: "English", trim: true },
     price: { type: Number, min: 0, default: 0 },
     originalPrice: { type: Number, min: 0 },
+    accessType: {
+      type: String,
+      enum: ["free", "individual_only", "subscription_only", "both"],
+      default: "individual_only",
+      index: true,
+    },
     thumbnail: { url: String, publicId: String },
     previewVideo: { url: String, publicId: String },
     learningOutcomes: [{ type: String, trim: true }],
